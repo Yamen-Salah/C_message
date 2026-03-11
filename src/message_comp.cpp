@@ -1,10 +1,9 @@
 #include "message_comp.h"
 #include <LiquidCrystal_I2C.h>
 
-//the progmem flag puts the strings in flash instead of ram - turns out it not needed but it saves memory anyway so why not keep it
-const char letters[] PROGMEM = {'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'};
-const char numbers[] PROGMEM = {'0','1','2','3','4','5','6','7','8','9'};
-const char specials[] PROGMEM = {' ','.','?','!',';','"','#','@','$','+','-','*','/','(',')'};
+const char letters[] = {'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'};
+const char numbers[] = {'0','1','2','3','4','5','6','7','8','9'};
+const char specials[] = {' ','.','?','!',';','"','#','@','$','+','-','*','/','(',')'};
 
 const CharSet charSets[] = {
   {letters, 26},

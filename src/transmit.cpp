@@ -3,7 +3,7 @@
 #include "ui.h"
 
 //The Radios have 6 adresses used to define wherer they store data kind of "channels"
-const byte address[][6] PROGMEM = {"Ch001", "Ch002", "Ch003", "Ch004", "Ch005", "Ch006"};
+const byte address[][6] = {"Ch001", "Ch002", "Ch003", "Ch004", "Ch005", "Ch006"};
 
 //Special constants that define the power levels for the RF lib
 const int pwrLevels[] = {RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX};
@@ -22,20 +22,16 @@ int construct_packets(Node *head_ptr){
   Node* temp = head_ptr;
   int index = 0;
 
-  //First loop repeats until there are no more nodes in the char linked list.
   while(temp != NULL){
     packet chunk;
     memset(chunk.data, 0, sizeof(chunk.data));
     chunk.packet_index = index;
 
-    //Second loop repeatedly places chars from the linked list into a packet until the packet is full. then ties up the packet with either EOM or continue
     for(int i = 0; i < PACKET_SIZE && temp != NULL; i++){
       chunk.data[i] = temp->data;
       temp = temp->next;
     }
     chunk.finalPacket = (temp == NULL) ? EOM : CONTINUE;
-    
-    //enqeue the packet into the queue ready to be sent.
     enqueue(&tx_queue_front, &tx_queue_back, chunk);
     index++;
   }
@@ -66,20 +62,16 @@ int receive_packet(){
 }
 
 char* rebuild_message(){
-  if(stack_empty(rx_stack)) {
-    return NULL;  // No packets to rebuild
-  }
+  if(stack_empty(rx_stack))
+    return NULL;
   
   packet chunk = pop(&rx_stack);
-  int FinalChunkSize = 0;
   int packetNum = chunk.packet_index;
-
-  for(int k = 0; chunk.data[k] != '\0'; k++, FinalChunkSize++);
+  int FinalChunkSize = strlen(chunk.data);
 
   int totalChars = (packetNum * PACKET_SIZE) + FinalChunkSize + 1;
   char *message = (char*) malloc(totalChars);
   if(message == NULL) {
-    // Memory allocation failed - clear remaining stack to prevent leak
     stack_clear(&rx_stack);
     return NULL;
   }
@@ -91,7 +83,6 @@ char* rebuild_message(){
   }
   for(int i = 0; i < packetNum; i++){
     if(stack_empty(rx_stack)) {
-      // Stack empty prematurely - free message and clear to prevent leak
       free(message);
       return NULL;
     }
@@ -101,26 +92,18 @@ char* rebuild_message(){
       message[ArrPos + j] = chunk.data[j];
     }
   }
-  
-  // Clear any remaining packets in stack (should be empty, but safety check)
-  stack_clear(&rx_stack);
-  
   return message;
 }
 
 //Radio Init bruv
 void init_radio_tx(int byte_address, int pwr_lvl){
-  byte addr[6];
-  memcpy_P(addr, address[byte_address - 1], 6);
-  radio.openWritingPipe(addr);
+  radio.openWritingPipe(address[byte_address - 1]);
   radio.setPALevel(pwr_lvl);
   radio.stopListening();
 }
 
 void init_radio_rx(int byte_address, int pwr_lvl){
-  byte addr[6];
-  memcpy_P(addr, address[byte_address - 1], 6);
-  radio.openReadingPipe(1, addr);
+  radio.openReadingPipe(1, address[byte_address - 1]);
   radio.setPALevel(pwr_lvl);
   radio.startListening();
   radio.flush_rx();
@@ -131,7 +114,7 @@ void push(StackNode **top, packet p){
   StackNode *p_new = (StackNode*) malloc(sizeof(StackNode));
   if(p_new == NULL) {
     memory_full(lcd);
-    return;  // Prevent NULL pointer dereference
+    return;
   }
   p_new->data = p;
   p_new->next = *top;
@@ -158,30 +141,22 @@ bool stack_empty(StackNode *top){
 }
 
 void stack_clear(StackNode **top){
-  while(!stack_empty(*top)){
-    pop(top);
-  }
+  while(*top) pop(top);
 }
 
 //Queue implementation functions
-PacketNode* create_packet (packet p) {
-  // Declaration of local node pointer, with mem allocation
-  PacketNode *p_new = (PacketNode*) malloc (sizeof(PacketNode));
-  
-  if (p_new != NULL) {
-    p_new->data = p; 
-    p_new->next = NULL;
-  }
+PacketNode* create_packet(packet p) {
+  PacketNode *p_new = (PacketNode*) malloc(sizeof(PacketNode));
+  if(p_new == NULL) return NULL;
+  p_new->data = p;
+  p_new->next = NULL;
   return p_new;
 }
 
-int enqueue (PacketNode **front, PacketNode **back, packet p){
-  PacketNode *p_new = create_packet (p);
-  //Make sure node creation worked
-  if (p_new == NULL) {
-    return -1;
-  }
-  if (*back != NULL){
+int enqueue(PacketNode **front, PacketNode **back, packet p){
+  PacketNode *p_new = create_packet(p);
+  if(p_new == NULL) return -1;
+  if(*back != NULL){
     (*back)->next = p_new;
     *back = p_new;
   }
@@ -194,8 +169,7 @@ int enqueue (PacketNode **front, PacketNode **back, packet p){
 
 packet dequeue(PacketNode **front, PacketNode **back) {
   packet p;
-  if (*front == NULL) {
-    //If queue is empty, 
+  if(*front == NULL) {
     p.packet_index = 0;
     memset(p.data, 0, PACKET_SIZE);
     p.finalPacket = 0;
@@ -219,19 +193,16 @@ bool queue_empty(PacketNode *front) {
 }
 
 void queue_clear(PacketNode **front, PacketNode **back) {
-  while (!queue_empty(*front)) {
-    dequeue(front, back);
-  }
+  while(*front) dequeue(front, back);
 }
 
 //Linked list functions
 MsgNode* create_msg_node(char *val){
   MsgNode *p_new = (MsgNode*) malloc(sizeof(MsgNode));
-  if(p_new != NULL){
-    p_new->data = val;
-    p_new->prev = NULL;
-    p_new->next = NULL;
-  }
+  if(p_new == NULL) return NULL;
+  p_new->data = val;
+  p_new->prev = NULL;
+  p_new->next = NULL;
   return p_new;
 }
 

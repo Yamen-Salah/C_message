@@ -43,30 +43,28 @@ int handleSelect(int pin, LiquidCrystal_I2C &lcd) {
     lastSelect = millis();
   }
 
-  //Held, check if long press threshold reached
-  else if (pressed && !longPressDone) {
-    if (millis() - lastSelect > LONG_PRESS_MS) {
-      longPressDone = true;
-      state = LONG_SELECT;
-    }
+  //Held
+  else if (pressed && !longPressDone && millis() - lastSelect > LONG_PRESS_MS) {
+    longPressDone = true;
+    state = LONG_SELECT;
   }
 
-  //Released, if it wasn't a long press, its a short press
+  //Released
   else if (!pressed && selectHeld) {
-    if (!longPressDone && (millis() - lastSelect > DEBOUNCE_MS)) {
+    if (!longPressDone && millis() - lastSelect > DEBOUNCE_MS) {
       if (!editMode) {
-        int setSize = charSets[currentSet].size;
-        if (setSize > 0) {
-          char c = pgm_read_byte(&charSets[currentSet].chars[constrain(encoderPos, 0, setSize - 1)]);
-          Node *target = (insertPos > 0) ? get_node_at(insertPos - 1) : nullptr;
-          int result = target ? insert_data_at_middle(target, c) : insert_data_at_head(c);
-          if (result == 0) insertPos++;
+        const auto &cs = charSets[currentSet];
+        if (cs.size > 0) {
+          char c = cs.chars[constrain(encoderPos, 0, cs.size - 1)];
+          Node *target = insertPos > 0 ? get_node_at(insertPos - 1) : nullptr;
+          if ((target ? insert_data_at_middle(target, c) : insert_data_at_head(c)) == 0)
+            insertPos++;
         }
       } else {
-        int len = get_message_length();
-        if (len > 0) {
-          find_and_delete_data(get_node_at(updateCursor));
-          len--;
+        Node *node = get_node_at(updateCursor);
+        if (node) {
+          find_and_delete_data(node);
+          int len = get_message_length();
           if (len == 0) { updateCursor = 0; insertPos = 0; }
           else updateCursor = min(updateCursor, len - 1);
         }
@@ -94,15 +92,15 @@ void letter_scroll(int letter_index, LiquidCrystal_I2C &lcd) {
   //main letter choices
   if (letter_index > 0) {
     lcd.setCursor(4, 0);
-    lcd.print("< ");
-    lcd.print((char)pgm_read_byte(&charSets[currentSet].chars[letter_index - 1]));
+    lcd.print(F("< "));
+    lcd.print(charSets[currentSet].chars[letter_index - 1]);
   }
   lcd.setCursor(8, 0);
-  lcd.print((char)pgm_read_byte(&charSets[currentSet].chars[letter_index]));
+  lcd.print(charSets[currentSet].chars[letter_index]);
   if (letter_index < setSize - 1) {
     lcd.setCursor(10, 0);
-    lcd.print((char)pgm_read_byte(&charSets[currentSet].chars[letter_index + 1]));
-    lcd.print(" >");
+    lcd.print(charSets[currentSet].chars[letter_index + 1]);
+    lcd.print(F(" >"));
   }
 }
 
@@ -122,7 +120,7 @@ void tx_display_message(int cursorPos, bool editMode, LiquidCrystal_I2C &lcd) {
   if (messageLength == 0) {
     if (!editMode && (millis() / 500) % 2 == 0) {
       lcd.setCursor(0, 1);
-      lcd.print("_");
+      lcd.print(F("_"));
     }
     return;
   }
@@ -145,7 +143,7 @@ void tx_display_message(int cursorPos, bool editMode, LiquidCrystal_I2C &lcd) {
     int cursorCol = cursorPos - windowStart;
     if (cursorCol < 16 && (millis() / 500) % 2 == 0) {
       lcd.setCursor(cursorCol, 1);
-      lcd.print("_");
+      lcd.print(F("_"));
     }
   }
 }
@@ -157,15 +155,15 @@ void tx_show_translation(char *msg, LiquidCrystal_I2C &lcd){
 
 void rx_display_message(char *msg, int cursorPos, int msgIndex, LiquidCrystal_I2C &lcd){
   lcd.setCursor(0, 0);
-  lcd.print("                ");
+  lcd.print(F("                "));
   lcd.setCursor(0, 0);
-  lcd.print("Msg ");
+  lcd.print(F("Msg "));
   lcd.print(msgIndex + 1);
 
   int len = strlen(msg);
 
   lcd.setCursor(0, 1);
-  lcd.print("                ");
+  lcd.print(F("                "));
   lcd.setCursor(0, 1);
   for (int i = cursorPos, col = 0; i < len && col < 16; i++, col++) {
     lcd.print(msg[i]);
@@ -198,10 +196,10 @@ void rx_count(int packet_index, LiquidCrystal_I2C &lcd){
   lcd.setCursor(0, 0);
   lcd.print(F(" Receiving Msg! "));
   lcd.setCursor(0, 1);
-  lcd.print(" Pkt: ");
+  lcd.print(F(" Pkt: "));
   lcd.print(packet_index + 1);
   lcd.print("/");
-  lcd.print("?");
+  lcd.print(F("?"));
 }
 
 void memory_full(LiquidCrystal_I2C &lcd){
