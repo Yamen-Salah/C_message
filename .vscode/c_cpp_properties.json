@@ -1,0 +1,64 @@
+//
+// !!! WARNING !!! AUTO-GENERATED FILE!
+// PLEASE DO NOT MODIFY IT AND USE "platformio.ini":
+// https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags
+//
+{
+    "configurations": [
+        {
+            "name": "PlatformIO",
+            "includePath": [
+                "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/include",
+                "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/src",
+                "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/PinChangeInterrupt/src",
+                "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/RF24",
+                "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/RF24/utility",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/LiquidCrystal_I2C",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/cores/arduino",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/variants/eightanaloginputs",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                ""
+            ],
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/include",
+                    "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/src",
+                    "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/PinChangeInterrupt/src",
+                    "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/RF24",
+                    "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/RF24/utility",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                    "/home/mohamed/Documents/Coding/Queens/178 Coding/CMessage/CMessage/.pio/libdeps/uno/LiquidCrystal_I2C",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/cores/arduino",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/variants/eightanaloginputs",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                    "/home/mohamed/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                    ""
+                ]
+            },
+            "defines": [
+                "PLATFORMIO=60119",
+                "ARDUINO_AVR_NANO",
+                "F_CPU=16000000L",
+                "ARDUINO_ARCH_AVR",
+                "ARDUINO=10808",
+                "__AVR_ATmega328P__",
+                ""
+            ],
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++11",
+            "compilerPath": "/home/mohamed/.platformio/packages/toolchain-atmelavr/bin/avr-gcc",
+            "compilerArgs": [
+                "-mmcu=atmega328p",
+                ""
+            ]
+        }
+    ],
+    "version": 4
+}
