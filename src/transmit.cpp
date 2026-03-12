@@ -51,6 +51,7 @@ void transmit_message(LiquidCrystal_I2C &lcd) {
     transmit_packet();
     progress_bar(i, totalPackets, lcd);
   }
+  delay(500);
 }
 
 //RX
@@ -58,7 +59,7 @@ int receive_packet(){
   packet chunk;
   radio.read(&chunk, sizeof(chunk));
   push(&rx_stack, chunk);
-  return (chunk.finalPacket == EOM) ? 1 : -1;
+  return chunk.packet_index;
 }
 
 char* rebuild_message(){
@@ -67,7 +68,7 @@ char* rebuild_message(){
   
   packet chunk = pop(&rx_stack);
   int packetNum = chunk.packet_index;
-  int FinalChunkSize = strlen(chunk.data);
+  int FinalChunkSize = strnlen(chunk.data, PACKET_SIZE);
 
   int totalChars = (packetNum * PACKET_SIZE) + FinalChunkSize + 1;
   char *message = (char*) malloc(totalChars);
@@ -98,13 +99,13 @@ char* rebuild_message(){
 //Radio Init bruv
 void init_radio_tx(int byte_address, int pwr_lvl){
   radio.openWritingPipe(address[byte_address - 1]);
-  radio.setPALevel(pwr_lvl);
+  radio.setPALevel(pwrLevels[pwr_lvl]);
   radio.stopListening();
 }
 
 void init_radio_rx(int byte_address, int pwr_lvl){
   radio.openReadingPipe(1, address[byte_address - 1]);
-  radio.setPALevel(pwr_lvl);
+  radio.setPALevel(pwrLevels[pwr_lvl]);
   radio.startListening();
   radio.flush_rx();
 }
@@ -122,13 +123,8 @@ void push(StackNode **top, packet p){
 }
 
 packet pop(StackNode **top){
-  packet p;
-  if(*top == NULL){
-    p.packet_index = 0;
-    memset(p.data, 0, PACKET_SIZE);
-    p.finalPacket = 0;
-    return p;
-  }
+  packet p = {};
+  if(*top == NULL) return p;
   StackNode *temp = *top;
   p = temp->data;
   *top = temp->next;
@@ -168,13 +164,8 @@ int enqueue(PacketNode **front, PacketNode **back, packet p){
 }
 
 packet dequeue(PacketNode **front, PacketNode **back) {
-  packet p;
-  if(*front == NULL) {
-    p.packet_index = 0;
-    memset(p.data, 0, PACKET_SIZE);
-    p.finalPacket = 0;
-    return p;
-  }
+  packet p = {};
+  if(*front == NULL) return p;
 
   PacketNode *temp = *front;
   p = temp->data;

@@ -3,7 +3,7 @@
 #include <LiquidCrystal_I2C.h>
 
 //Debounce times
-const int DEBOUNCE_MS   = 100;
+const int DEBOUNCE_MS   = 200;
 const int LONG_PRESS_MS = 600;
 
 unsigned long lastSelect = 0;
@@ -79,28 +79,30 @@ int handleSelect(int pin, LiquidCrystal_I2C &lcd) {
 }
 
 void letter_scroll(int letter_index, LiquidCrystal_I2C &lcd) {
-  //clear row
-  lcd.setCursor(0, 0);
-  lcd.print(F("                "));
-
   int setSize = charSets[currentSet].size;
   if (setSize == 0) return;
-  
-  // Constrain letter_index to valid range
+
   letter_index = constrain(letter_index, 0, setSize - 1);
 
-  //main letter choices
-  if (letter_index > 0) {
-    lcd.setCursor(4, 0);
+  lcd.setCursor(0, 0);
+  lcd.print(F("    "));                                   // cols 0-3: left padding
+
+  if (letter_index > 0) {                                 // cols 4-6: prev char with arrow, or blank if at start
     lcd.print(F("< "));
     lcd.print(charSets[currentSet].chars[letter_index - 1]);
+  } else {
+    lcd.print(F("   "));
   }
-  lcd.setCursor(8, 0);
-  lcd.print(charSets[currentSet].chars[letter_index]);
-  if (letter_index < setSize - 1) {
-    lcd.setCursor(10, 0);
+
+  lcd.print(F(" "));                                      // col 7: gap
+  lcd.print(charSets[currentSet].chars[letter_index]);    // col 8: selected char
+
+  if (letter_index < setSize - 1) {                      // cols 9-15: next char with arrow, or blank if at end
+    lcd.print(F(" "));
     lcd.print(charSets[currentSet].chars[letter_index + 1]);
-    lcd.print(F(" >"));
+    lcd.print(F(" >   "));
+  } else {
+    lcd.print(F("       "));
   }
 }
 
@@ -109,65 +111,38 @@ void letter_scroll(int letter_index, LiquidCrystal_I2C &lcd) {
 void tx_display_message(int cursorPos, bool editMode, LiquidCrystal_I2C &lcd) {
   int messageLength = get_message_length();
 
-  if (editMode) {
+  if (editMode) {  // delete mode tool tip
     lcd.setCursor(0, 0);
     lcd.print(F("Edit Msg:Sel=Del"));
   }
 
-  lcd.setCursor(0, 1);
-  lcd.print(F("                "));
-
-  if (messageLength == 0) {
-    if (!editMode && (millis() / 500) % 2 == 0) {
-      lcd.setCursor(0, 1);
-      lcd.print(F("_"));
-    }
-    return;
-  }
   cursorPos = constrain(cursorPos, 0, messageLength);
+  int windowStart = max(0, cursorPos - (editMode ? 14 : 15));  // scroll window; edit mode reserves col 15 for context
 
-  int maxVisible = editMode ? 14 : 15;
-  int windowStart = max(0, cursorPos - maxVisible);
-
-  Node *p = get_node_at(windowStart);
+  Node *p = get_node_at(windowStart);    // walk list from window start, one char per column
   lcd.setCursor(0, 1);
-  for (int i = windowStart, col = 0; i < messageLength && col < 16; i++, col++, p = p->next) {
-    char c = p->data;
-    if (editMode && i == cursorPos)
-      lcd.write((millis() / 300) % 2 == 0 ? (uint8_t)c : 0xFF);
-    else
-      lcd.print(c);
-  }
-
-  if (!editMode) {
-    int cursorCol = cursorPos - windowStart;
-    if (cursorCol < 16 && (millis() / 500) % 2 == 0) {
-      lcd.setCursor(cursorCol, 1);
-      lcd.print(F("_"));
-    }
+  for (int col = 0; col < 16; col++) {
+    int i = windowStart + col;
+    char c = (i < messageLength) ? p->data : ' ';
+    if (i < messageLength) p = p->next;
+    lcd.print(i == cursorPos && (millis() / 500) % 2 == 0 ? '_' : c);  // blink underscore at cursor
   }
 }
-
-void tx_show_translation(char *msg, LiquidCrystal_I2C &lcd){
-
-}
-
 
 void rx_display_message(char *msg, int cursorPos, int msgIndex, LiquidCrystal_I2C &lcd){
-  lcd.setCursor(0, 0);
-  lcd.print(F("                "));
+  // Row 0: Message Nunmber
   lcd.setCursor(0, 0);
   lcd.print(F("Msg "));
   lcd.print(msgIndex + 1);
+  lcd.print(F("           "));
 
+  // Row 1: message 
   int len = strlen(msg);
-
   lcd.setCursor(0, 1);
-  lcd.print(F("                "));
-  lcd.setCursor(0, 1);
-  for (int i = cursorPos, col = 0; i < len && col < 16; i++, col++) {
+  int col = 0;
+  for (int i = cursorPos; i < len && col < 16; i++, col++)
     lcd.print(msg[i]);
-  }
+  while (col < 16) { lcd.print(' '); col++; }
 }
 
 void progress_bar(int packet_index, int totalPackets, LiquidCrystal_I2C &lcd){
@@ -177,8 +152,8 @@ void progress_bar(int packet_index, int totalPackets, LiquidCrystal_I2C &lcd){
   lcd.print("/");
   lcd.print(totalPackets);
 
-  int percent = ((packet_index + 1) * 100)/totalPackets;
-  int barLength = map(percent, 0, 100, 0, 13);
+  int percent = ((packet_index + 1) * 100) / totalPackets;
+  int barLength = (packet_index + 1) * 13 / totalPackets;
 
   lcd.setCursor(0, 1);
   for (int i = 0; i < 13; i++) {
@@ -211,5 +186,12 @@ void ui_listen(LiquidCrystal_I2C &lcd){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(F("  Listening...  "));
+}
+
+void ui_no_messages(LiquidCrystal_I2C &lcd){
+  lcd.setCursor(0, 0);
+  lcd.print(F("   No Messages  "));
+  lcd.setCursor(0, 1);
+  lcd.print(F("                "));
 }
 

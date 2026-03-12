@@ -6,7 +6,7 @@
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 //CE, CSN for rf
-RF24 radio(9, 10);
+RF24 radio(A2, A1);
 
 //potentially changeable constants
 const int sck = 13;
@@ -23,15 +23,15 @@ const int rightArrow = 3;
 const int downArrow = 2;
 
 //globals and or variables used in the loop
-enum Mode {RX, TX }; 
-int current_mode = TX;
+enum Mode {RX, TX };
+Mode current_mode = TX;
 bool rxListen = true;
 int rxMsgIndex = 0;
 int rxCursorPos = 0;
 
 //time since last keypapd press
-unsigned long lastLeftPress = 0;
-unsigned long lastRightPress = 0;
+unsigned long lastLeft = 0;
+unsigned long lastRight = 0;
 unsigned long lastUp = 0;
 unsigned long lastDown = 0;
 
@@ -45,6 +45,9 @@ void setup() {
   lcd.init();
   lcd.backlight();
   init_radio_tx(1, 1);
+
+  // Test messages for teting inbox
+  // insert_msg_head(strdup("Hello!"));
 
   pinMode(encoder_A, INPUT_PULLUP);
   pinMode(encoder_B, INPUT_PULLUP);
@@ -60,24 +63,23 @@ void loop() {
   //wow system interrupts are so cool, i never need to poll. but -30bytes ram :(
   if (current_mode == RX) {
 
-    if (rxListen) {
-      if (radio.available()) {
-        if (radio.testRPD()) {
-          int status = receive_packet();
-          rx_count(status, lcd);
-          if (status == 1) {
-            char* message = rebuild_message();
-            if (message != NULL) {
-              insert_msg_head(message);
-              rxMsgIndex = 0;
-            } else {
-              lcd.setCursor(0, 0);
-              lcd.print(F("Rebuild Failed  "));
-              delay(1000);
-            }
+    if (rxListen) { //if not browsing messages
+      if (radio.isChipConnected() && radio.available()) { //if a packet has arrived
+
+        int pktIndex = receive_packet();
+        rx_count(pktIndex, lcd);
+
+        if (rx_stack->data.finalPacket == EOM) { //was the final packet
+          char* message = rebuild_message(); //returns a char ptr to the reassembled message
+          if (message != NULL) {
+            insert_msg_head(message); //put the new msg at top of inbox
+            rxMsgIndex = 0;
           }
-        } else {
-          radio.flush_rx();
+          else {
+            lcd.setCursor(0, 0);
+            lcd.print(F("Rebuild Failed  "));
+            delay(500);
+          }
         }
       }
     }
@@ -85,75 +87,66 @@ void loop() {
     int selectAction = handleSelect(selectBtn, lcd);
 
     if (selectAction == LONG_SELECT) {
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print(F("   TX Mode      "));
       currentSet = 0;
-      encoderPos = constrain(encoderPos, 0, charSets[currentSet].size - 1);
       insertPos = 0;
-      updateCursor = 0;
       editMode = false;
       current_mode = TX;
       delete_all_data();
-      init_radio_tx(2, 1);
-      delay(500);
+      init_radio_tx(1, 1);
       return;
     }
 
     int msgCount = saved_msgs();
 
-    //Short select deletes current message when browsing
     if (selectAction == SHORT_SELECT && !rxListen && msgCount > 0) {
-      MsgNode *currentMsg = msg_head;
-      for (int i = 0; i < rxMsgIndex && currentMsg != NULL; i++)
-        currentMsg = currentMsg->next;
-
-      if (currentMsg != NULL) {
-        delete_msg(currentMsg);
-        msgCount = saved_msgs();
-        
-        if (msgCount == 0) {
-          rxListen = true;
-          rxMsgIndex = 0;
-          ui_listen(lcd);
-        } else if(rxMsgIndex >= msgCount) {
-          rxMsgIndex = msgCount - 1;
-        }
+      MsgNode *current = msg_head;
+      for (int i = 0; i < rxMsgIndex && current; i++){ //go to the target Node
+        current = current->next;
       }
+        delete_msg(current);
+        msgCount = saved_msgs();
+        rxMsgIndex = msgCount ? min(rxMsgIndex, msgCount - 1) : 0;
     }
 
-    //Right button switch to browse mode
-    if (buttonPressed(rightArrow, lastRightPress)) {
+    //Right: enter browse mode
+    if (buttonPressed(rightArrow, lastRight) && rxListen) {
       rxListen = false;
       rxCursorPos = 0;
+      encoderPos = 0;
     }
-    //Left button switch to listen mode
-    if (buttonPressed(leftArrow, lastLeftPress)) {
+    //Left: exit browse mode back to listen
+    if (buttonPressed(leftArrow, lastLeft) && !rxListen) {
       rxListen = true;
+      rxCursorPos = 0;
       ui_listen(lcd);
     }
 
-    // Up/Down cycle through messages when browsing
-    if (!rxListen && msgCount > 0) {
-      if (buttonPressed(upArrow, lastUp)) {
-        if (rxMsgIndex > 0) {
+    // Up/Down cycle through messages; encoder scrolls within a message
+    if (!rxListen) {
+      if (msgCount > 0) {
+        if (buttonPressed(upArrow, lastUp) && rxMsgIndex > 0) {
           rxMsgIndex--;
           rxCursorPos = 0;
+          encoderPos = 0;
         }
-      }
-      if (buttonPressed(downArrow, lastDown)) {
-        if (rxMsgIndex < msgCount - 1) {
+        if (buttonPressed(downArrow, lastDown) && rxMsgIndex < msgCount - 1) {
           rxMsgIndex++;
           rxCursorPos = 0;
+          encoderPos = 0;
         }
-      }
 
-      MsgNode *currentMsg = msg_head;
-      for (int i = 0; i < rxMsgIndex && currentMsg != NULL; i++)
-        currentMsg = currentMsg->next;
+        MsgNode *currentMsg = msg_head;
+        for (int i = 0; i < rxMsgIndex && currentMsg != NULL; i++){
+          currentMsg = currentMsg->next;
+        }
 
-      if (currentMsg != NULL) {
-        rx_display_message(currentMsg->data, rxCursorPos, rxMsgIndex, lcd);
+        if (currentMsg != NULL) {
+          int maxScroll = max(0, (int)strlen(currentMsg->data) - 16);
+          encoderPos = constrain(encoderPos, 0, maxScroll);
+          rx_display_message(currentMsg->data, encoderPos, rxMsgIndex, lcd);
+        }
+      } else {
+        ui_no_messages(lcd);
       }
     }
   }
@@ -165,64 +158,47 @@ void loop() {
     if (selectAction == LONG_SELECT) {
       transmit_message(lcd);
 
-      int messageLen = saved_msgs();
-
-      if (messageLen > 0) {
-        delete_all_data();
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print(F("   MSG Sent     "));
-      }
-      else {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print(F("   RX Mode      "));
-        init_radio_rx(1,1);
-      }
-      insertPos = 0;
-      updateCursor = 0;
+      delete_all_data();
+      init_radio_rx(1, 1);
       editMode = false;
       current_mode = RX;
       rxListen = true;
-
-      delay(500);
+      ui_listen(lcd);
       return;
     }
 
     //L/R cycle character layer in compose mode
     if (!editMode) {
-      if (buttonPressed(rightArrow, lastRightPress)) {
+      if (buttonPressed(rightArrow, lastRight)) {
         currentSet = (currentSet + 1) % 3;
-        encoderPos = 0;  //reset to center
+        encoderPos = 0;  //reset
       }
-      if (buttonPressed(leftArrow, lastLeftPress)) {
+      if (buttonPressed(leftArrow, lastLeft)) {
         currentSet = (currentSet - 1 + 3) % 3;
         encoderPos = 0;
       }
     }
 
     //Down arrow enters edit mode
-    if (buttonPressed(downArrow, lastDown)) {
-      if (!editMode && get_message_length() > 0) {
-        editMode = true;
-        updateCursor = constrain(insertPos - 1, 0, get_message_length() - 1);
-        encoderPos = updateCursor;  //set encoder to cursor pos
-      }
+    if (buttonPressed(downArrow, lastDown) && !editMode) {
+      int len = get_message_length();
+      editMode = true;
+      updateCursor = constrain(insertPos - 1, 0, len - 1);
+      encoderPos = updateCursor;  //set encoder to cursor pos
     }
 
     //Up arrow exits edit mode
-    if (buttonPressed(upArrow, lastUp)) {
-      if (editMode) {
-        editMode = false;
-        insertPos = constrain(updateCursor + 1, 0, get_message_length());
-        encoderPos = 0;  //reset for compose mode
-      } 
+    if (buttonPressed(upArrow, lastUp) && editMode) {
+      editMode = false;
+      insertPos = constrain(updateCursor + 1, 0, get_message_length());
+      encoderPos = 0;  //reset for compose mode
     }
 
     //Displays LCD
     if (editMode) {
-      if (get_message_length() > 0) {
-        encoderPos = constrain(encoderPos, 0, get_message_length() - 1);
+      int len = get_message_length();
+      if (len > 0) {
+        encoderPos = constrain(encoderPos, 0, len - 1);
         updateCursor = encoderPos;
       }
       tx_display_message(updateCursor, true, lcd);
@@ -230,8 +206,6 @@ void loop() {
     else {
       encoderPos = constrain(encoderPos, 0, charSets[currentSet].size - 1);
       letter_scroll(encoderPos, lcd);
-      int messageLength = get_message_length();
-      insertPos = constrain(insertPos, 0, messageLength);
       tx_display_message(insertPos, false, lcd);
     }
   }

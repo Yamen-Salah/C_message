@@ -22,13 +22,11 @@ void readEncoder(int pinA, int pinB);
 void tx_display_message(int cursorPos, bool editMode, LiquidCrystal_I2C &lcd);
 void rx_display_message(char *msg, int cursorPos, int msgIndex, LiquidCrystal_I2C &lcd);
 
-void tx_show_translation(char *msg, LiquidCrystal_I2C &lcd);
-void rx_show_translation(char *msg, LiquidCrystal_I2C &lcd);
-
 void progress_bar(int packet_index, int totalPackets, LiquidCrystal_I2C &lcd);
 void rx_count(int packet_index, LiquidCrystal_I2C &lcd);
 
 void memory_full(LiquidCrystal_I2C &lcd);
 void ui_listen(LiquidCrystal_I2C &lcd);
+void ui_no_messages(LiquidCrystal_I2C &lcd);
 void letter_scroll(int letter_index, LiquidCrystal_I2C &lcd);
 #endif
