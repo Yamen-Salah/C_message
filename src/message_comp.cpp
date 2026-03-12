@@ -6,15 +6,13 @@ const char numbers[] = {'0','1','2','3','4','5','6','7','8','9'};
 const char specials[] = {' ','.','?','!',';','"','#','@','$','+','-','*','/','(',')'};
 
 const CharSet charSets[] = {
-  {letters, 26},
-  {numbers, 10},
-  {specials, 15}
+  {letters, sizeof(letters)/sizeof(letters[0])},
+  {numbers, sizeof(numbers)/sizeof(numbers[0])},
+  {specials, sizeof(specials)/sizeof(specials[0])}
 };
 
 Node *p_head = NULL;
 Node *p_tail = NULL;
-
-int currentSet = 0;
 
 //LINKED LIST FUNCTIONS AFTER HERE
 // Function to create a new node
@@ -111,7 +109,7 @@ int find_and_delete_data(Node *target) {
   return 0;
 }
 
-int delete_all_data() {
+void delete_all_data() {
   Node *p_temp;
   // Loop through all nodes
   while (p_head != NULL) {
@@ -120,7 +118,6 @@ int delete_all_data() {
     free(p_temp);
   }
   p_tail = NULL;
-  return 0;
 }
 
 //returns the length of the message by following the chain of nodes.

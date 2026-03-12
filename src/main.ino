@@ -23,6 +23,7 @@ const int rightArrow = 3;
 const int downArrow = 2;
 
 //globals and or variables used in the loop
+int currentSet = 0;
 enum Mode {RX, TX };
 Mode current_mode = TX;
 bool rxListen = true;

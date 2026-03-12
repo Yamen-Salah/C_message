@@ -17,6 +17,7 @@ MsgNode *msg_tail = NULL;
 
 StackNode *rx_stack = NULL;
 
+//This function will have to change alot for the morse encoding
 int construct_packets(Node *head_ptr){
   queue_clear(&tx_queue_front, &tx_queue_back);
   Node* temp = head_ptr;
@@ -62,6 +63,8 @@ int receive_packet(){
   return chunk.packet_index;
 }
 
+// Rebuilds the message back to front from the stack
+//uses a stack because its much easier to see the last packet
 char* rebuild_message(){
   if(stack_empty(rx_stack))
     return NULL;

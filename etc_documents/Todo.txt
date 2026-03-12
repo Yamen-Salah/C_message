@@ -1,0 +1,10 @@
+split up HandleSelect into pieces that
+#1 Decides what the encoder is doing
+#2 calls a new function that puts the right character in the right place
+
+Implement BST fucntions
+Implement Hash Table functions
+
+fix packet chunking to work with the new morse code system
+
+make ui functions to show the translation

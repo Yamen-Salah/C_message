@@ -27,7 +27,7 @@ int insert_data_at_head (char val);
 int insert_data_at_middle (Node* target, char val);
 int insert_data_at_tail (char val);
 int find_and_delete_data (Node* target);
-int delete_all_data ();
+void delete_all_data ();
 
 
 Node* get_node_at(int index);
