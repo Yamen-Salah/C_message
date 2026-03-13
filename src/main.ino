@@ -7,12 +7,12 @@
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 //CE, CSN for rf
 RF24 radio(A2, A1);
+// rf24 library uses sck, miso, mosi, automatically they just need to be physically wired
+// sck = 13;
+// miso = 12;
+// mosi = 11;
 
-//potentially changeable constants
-const int sck = 13;
-const int miso = 12;
-const int mosi = 11;
-
+//potentially changeable constants 
 const int encoder_B = 8;
 const int encoder_A = 7;
 
