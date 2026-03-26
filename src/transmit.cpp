@@ -18,7 +18,7 @@ MsgNode *msg_tail = NULL;
 StackNode *rx_stack = NULL;
 
 //This function will have to change alot for the morse encoding
-int construct_packets(Node *head_ptr){
+int construct_packets(Node *head_ptr){ //creates packets consisting of 30 bytes of char data
   queue_clear(&tx_queue_front, &tx_queue_back);
   Node* temp = head_ptr;
   int index = 0;
@@ -40,12 +40,13 @@ int construct_packets(Node *head_ptr){
 }
 
 //TX
-void transmit_packet(){
+void transmit_packet(){ //transmits packets of chars
   packet chunk = dequeue(&tx_queue_front, &tx_queue_back);
   radio.write(&chunk, sizeof(chunk));
 }
 
 void transmit_message(LiquidCrystal_I2C &lcd) {
+  // aden put your code here something like this -> Node p_head_translated = translate_message();
   int totalPackets = construct_packets(p_head);
 
   for(int i = 0; i < totalPackets; i++) {
@@ -56,7 +57,7 @@ void transmit_message(LiquidCrystal_I2C &lcd) {
 }
 
 //RX
-int receive_packet(){
+int receive_packet(){ 
   packet chunk;
   radio.read(&chunk, sizeof(chunk));
   push(&rx_stack, chunk);

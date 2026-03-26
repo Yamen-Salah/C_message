@@ -73,6 +73,7 @@ void loop() {
         if (rx_stack->data.finalPacket == EOM) { //was the final packet
           char* message = rebuild_message(); //returns a char ptr to the reassembled message
           if (message != NULL) {
+            //Callum please write your decode function call here something like this: char* decoded_message = decrypt_msg(message);
             insert_msg_head(message); //put the new msg at top of inbox
             rxMsgIndex = 0;
           }
