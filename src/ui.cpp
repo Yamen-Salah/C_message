@@ -8,7 +8,7 @@ const int LONG_PRESS_MS = 600;
 
 unsigned long lastSelect = 0;
 bool selectHeld = false;
-bool longPressDone = false;
+bool longPressFired = false;
 
 volatile int encoderPos = 0;
 volatile int lastTick = HIGH;
@@ -39,19 +39,19 @@ int handleSelect(int pin, LiquidCrystal_I2C &lcd) {
   //Press starts recording the time
   if (pressed && !selectHeld) {
     selectHeld = true;
-    longPressDone = false;
+    longPressFired = false;
     lastSelect = millis();
   }
 
   //Held
-  else if (pressed && !longPressDone && millis() - lastSelect > LONG_PRESS_MS) {
-    longPressDone = true;
+  else if (pressed && !longPressFired && millis() - lastSelect > LONG_PRESS_MS) {
+    longPressFired = true;
     state = LONG_SELECT;
   }
 
   //Released
   else if (!pressed && selectHeld) {
-    if (!longPressDone && millis() - lastSelect > DEBOUNCE_MS) {
+    if (!longPressFired && millis() - lastSelect > DEBOUNCE_MS) {
       if (!editMode) {
         const auto &cs = charSets[currentSet];
         if (cs.size > 0) {
@@ -72,7 +72,7 @@ int handleSelect(int pin, LiquidCrystal_I2C &lcd) {
       state = SHORT_SELECT;
     }
     selectHeld = false;
-    longPressDone = false;
+    longPressFired = false;
   }
 
   return state;
@@ -182,10 +182,25 @@ void memory_full(LiquidCrystal_I2C &lcd){
   lcd.print(F("  No Memory :(  "));
 }
 
+//The mythical yamen function
+void decode_failure(LiquidCrystal_I2C &lcd){ 
+  lcd.setCursor(0, 0);
+  lcd.print(F("Decoding Faliure"));
+}
+
 void ui_listen(LiquidCrystal_I2C &lcd){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(F("  Listening...  "));
+}
+
+void ui_msg_received(int msgCount, LiquidCrystal_I2C &lcd){
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(F("  Listening...  "));
+  lcd.setCursor(0, 1);
+  lcd.print(msgCount);
+  lcd.print(F(" msg(s) waiting "));
 }
 
 void ui_no_messages(LiquidCrystal_I2C &lcd){
@@ -193,5 +208,12 @@ void ui_no_messages(LiquidCrystal_I2C &lcd){
   lcd.print(F("   No Messages  "));
   lcd.setCursor(0, 1);
   lcd.print(F("                "));
+}
+
+//gpts function for seeing how much ram is left
+int free_ram() {
+  extern int __heap_start, *__brkval;
+  int v;
+  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
 }
 

@@ -83,7 +83,7 @@ void init_radio_rx(int byte_address, int pwr_lvl);
 //Tx
 int construct_packets(Node *head_ptr);
 void transmit_packet();
-void transmit_message(LiquidCrystal_I2C &lcd);
+void transmit_message(Node *head, LiquidCrystal_I2C &lcd);
 
 //Rx
 int receive_packet();

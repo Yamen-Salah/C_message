@@ -3,57 +3,53 @@
 #include "ui.h"
 #include "transmit.h"
 
-
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-//CE, CSN for rf
-RF24 radio(A2, A1);
-// rf24 library uses sck, miso, mosi, automatically they just need to be physically wired
-// sck = 13;
-// miso = 12;
-// mosi = 11;
+RF24 radio(A2, A1);  // CE=A2, CSN=A1; SCK/MISO/MOSI are hardware SPI (13/12/11)
 
-//potentially changeable constants 
 const int encoder_B = 8;
 const int encoder_A = 7;
-
 const int selectBtn = 6;
 const int leftArrow = 5;
-const int upArrow = 4;
+const int upArrow   = 4;
 const int rightArrow = 3;
-const int downArrow = 2;
+const int downArrow  = 2;
 
-//globals and or variables used in the loop
+morseTreeNode* root = NULL;
 int currentSet = 0;
-enum Mode {RX, TX };
+enum Mode { RX, TX };
 Mode current_mode = TX;
 bool rxListen = true;
 int rxMsgIndex = 0;
-int rxCursorPos = 0;
 
-//time since last keypapd press
 unsigned long lastLeft = 0;
 unsigned long lastRight = 0;
 unsigned long lastUp = 0;
 unsigned long lastDown = 0;
 
-//Pinmode interrupt so that the encoder does skip and acts better
 void encoder_interrupt() {
   readEncoder(encoder_A, encoder_B);
 }
 
 void setup() {
-  radio.begin();
+  Serial.begin(9600);
+  bool radioOk = false;
+  for (int attempt = 0; attempt < 5; attempt++) {
+    delay(200);
+    if (radio.begin()) { radioOk = true; break; }
+  }
+  Serial.println(radioOk ? F("[SETUP] radio OK") : F("[SETUP] radio FAILED"));
+
   lcd.init();
   lcd.backlight();
-  init_radio_tx(1, 1);
+  init_radio_tx(1, 3);
 
-  // Test messages for teting inbox
-  // insert_msg_head(strdup("Hello!"));
+  root = initNode((char*)ROOTKEY, ROOTLETTER);
+  root = buildTree(root);
 
   pinMode(encoder_A, INPUT_PULLUP);
   pinMode(encoder_B, INPUT_PULLUP);
   pinMode(selectBtn, INPUT_PULLUP);
-  pinMode(upArrow, INPUT_PULLUP);
+  pinMode(upArrow,   INPUT_PULLUP);
   pinMode(downArrow, INPUT_PULLUP);
   pinMode(leftArrow, INPUT_PULLUP);
   pinMode(rightArrow, INPUT_PULLUP);
@@ -61,23 +57,26 @@ void setup() {
 }
 
 void loop() {
-  //wow system interrupts are so cool, i never need to poll. but -30bytes ram :(
   if (current_mode == RX) {
 
-    if (rxListen) { //if not browsing messages
-      if (radio.isChipConnected() && radio.available()) { //if a packet has arrived
-
+    if (rxListen) {
+      if (radio.available()) {
         int pktIndex = receive_packet();
-        rx_count(pktIndex, lcd);
+        if (pktIndex == -1) { return; }
+        if (pktIndex > 0) rx_count(pktIndex, lcd);
 
-        if (rx_stack->data.finalPacket == EOM) { //was the final packet
-          char* message = rebuild_message(); //returns a char ptr to the reassembled message
+        if (rx_stack != NULL && rx_stack->data.finalPacket == EOM) {
+          char* message = rebuild_message();
           if (message != NULL) {
-            //Callum please write your decode function call here something like this: char* decoded_message = decrypt_msg(message);
-            insert_msg_head(message); //put the new msg at top of inbox
+            message = decodeMessage(message, 0, root);
+            if (message == NULL) { decode_failure(lcd); return; }
+            insert_msg_head(message);
             rxMsgIndex = 0;
-          }
-          else {
+            Serial.print(F("[RX] received: \""));
+            Serial.print(message);
+            Serial.println(F("\""));
+            ui_msg_received(saved_msgs(), lcd);
+          } else {
             lcd.setCursor(0, 0);
             lcd.print(F("Rebuild Failed  "));
             delay(500);
@@ -94,7 +93,8 @@ void loop() {
       editMode = false;
       current_mode = TX;
       delete_all_data();
-      init_radio_tx(1, 1);
+      init_radio_tx(1, 3);
+      Serial.println(F("[MODE] TX"));
       return;
     }
 
@@ -102,43 +102,36 @@ void loop() {
 
     if (selectAction == SHORT_SELECT && !rxListen && msgCount > 0) {
       MsgNode *current = msg_head;
-      for (int i = 0; i < rxMsgIndex && current; i++){ //go to the target Node
+      for (int i = 0; i < rxMsgIndex && current; i++) {
         current = current->next;
       }
-        delete_msg(current);
-        msgCount = saved_msgs();
-        rxMsgIndex = msgCount ? min(rxMsgIndex, msgCount - 1) : 0;
+      delete_msg(current);
+      msgCount = saved_msgs();
+      rxMsgIndex = msgCount ? min(rxMsgIndex, msgCount - 1) : 0;
     }
 
-    //Right: enter browse mode
     if (buttonPressed(rightArrow, lastRight) && rxListen) {
       rxListen = false;
-      rxCursorPos = 0;
       encoderPos = 0;
     }
-    //Left: exit browse mode back to listen
     if (buttonPressed(leftArrow, lastLeft) && !rxListen) {
       rxListen = true;
-      rxCursorPos = 0;
       ui_listen(lcd);
     }
 
-    // Up/Down cycle through messages; encoder scrolls within a message
     if (!rxListen) {
       if (msgCount > 0) {
         if (buttonPressed(upArrow, lastUp) && rxMsgIndex > 0) {
           rxMsgIndex--;
-          rxCursorPos = 0;
           encoderPos = 0;
         }
         if (buttonPressed(downArrow, lastDown) && rxMsgIndex < msgCount - 1) {
           rxMsgIndex++;
-          rxCursorPos = 0;
           encoderPos = 0;
         }
 
         MsgNode *currentMsg = msg_head;
-        for (int i = 0; i < rxMsgIndex && currentMsg != NULL; i++){
+        for (int i = 0; i < rxMsgIndex && currentMsg != NULL; i++) {
           currentMsg = currentMsg->next;
         }
 
@@ -151,29 +144,34 @@ void loop() {
         ui_no_messages(lcd);
       }
     }
-  }
 
-  else {
+  } else {
+
     int selectAction = handleSelect(selectBtn, lcd);
 
-    //Long press sends message and switch to RX
     if (selectAction == LONG_SELECT) {
-      transmit_message(lcd);
+      Serial.print(F("[TX] sending: \""));
+      for (Node* p = p_head; p != NULL; p = p->next) Serial.print(p->data);
+      Serial.println(F("\""));
+      Node* morse_head = translate_message(p_head);
+      transmit_message(morse_head, lcd);
+      Node* temp = morse_head;
+      while (temp != NULL) { Node* next = temp->next; free(temp); temp = next; }
 
       delete_all_data();
-      init_radio_rx(1, 1);
+      init_radio_rx(1, 3);
       editMode = false;
       current_mode = RX;
       rxListen = true;
       ui_listen(lcd);
+      Serial.println(F("[MODE] RX"));
       return;
     }
 
-    //L/R cycle character layer in compose mode
     if (!editMode) {
       if (buttonPressed(rightArrow, lastRight)) {
         currentSet = (currentSet + 1) % 3;
-        encoderPos = 0;  //reset
+        encoderPos = 0;
       }
       if (buttonPressed(leftArrow, lastLeft)) {
         currentSet = (currentSet - 1 + 3) % 3;
@@ -181,22 +179,19 @@ void loop() {
       }
     }
 
-    //Down arrow enters edit mode
     if (buttonPressed(downArrow, lastDown) && !editMode) {
       int len = get_message_length();
       editMode = true;
       updateCursor = constrain(insertPos - 1, 0, len - 1);
-      encoderPos = updateCursor;  //set encoder to cursor pos
+      encoderPos = updateCursor;
     }
 
-    //Up arrow exits edit mode
     if (buttonPressed(upArrow, lastUp) && editMode) {
       editMode = false;
       insertPos = constrain(updateCursor + 1, 0, get_message_length());
-      encoderPos = 0;  //reset for compose mode
+      encoderPos = 0;
     }
 
-    //Displays LCD
     if (editMode) {
       int len = get_message_length();
       if (len > 0) {
@@ -204,8 +199,7 @@ void loop() {
         updateCursor = encoderPos;
       }
       tx_display_message(updateCursor, true, lcd);
-    }
-    else {
+    } else {
       encoderPos = constrain(encoderPos, 0, charSets[currentSet].size - 1);
       letter_scroll(encoderPos, lcd);
       tx_display_message(insertPos, false, lcd);
