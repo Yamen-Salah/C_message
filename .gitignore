@@ -1,5 +1,7 @@
 .pio
 .cache
 cmake-build-debug
+CMakeLists.txt
+compile_commands.json
 .idea
 .vscode

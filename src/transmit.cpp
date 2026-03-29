@@ -3,14 +3,42 @@
 #include "ui.h"
 #include <Arduino.h>
 
-// The Radios have 6 adresses used to define wherer they store data kind of
-// "channels"
-const byte address[][6] = {"Ch001", "Ch002", "Ch003",
-                           "Ch004", "Ch005", "Ch006"};
+const char morse_A[]  PROGMEM = ".-";
+const char morse_B[]  PROGMEM = "-...";
+const char morse_C[]  PROGMEM = "-.-.";
+const char morse_D[]  PROGMEM = "-..";
+const char morse_E[]  PROGMEM = ".";
+const char morse_F[]  PROGMEM = "..-.";
+const char morse_G[]  PROGMEM = "--.";
+const char morse_H[]  PROGMEM = "....";
+const char morse_I[]  PROGMEM = "..";
+const char morse_J[]  PROGMEM = ".---";
+const char morse_K[]  PROGMEM = "-.-";
+const char morse_L[]  PROGMEM = ".-..";
+const char morse_M[]  PROGMEM = "--";
+const char morse_N[]  PROGMEM = "-.";
+const char morse_O[]  PROGMEM = "---";
+const char morse_P[]  PROGMEM = ".--.";
+const char morse_Q[]  PROGMEM = "--.-";
+const char morse_R[]  PROGMEM = ".-.";
+const char morse_S[]  PROGMEM = "...";
+const char morse_T[]  PROGMEM = "-";
+const char morse_U[]  PROGMEM = "..-";
+const char morse_V[]  PROGMEM = "...-";
+const char morse_W[]  PROGMEM = ".--";
+const char morse_X[]  PROGMEM = "-..-";
+const char morse_Y[]  PROGMEM = "-.--";
+const char morse_Z[]  PROGMEM = "--..";
+const char morse_SP[] PROGMEM = "----";
 
-// Special constants that define the power levels for the RF lib
-const int pwrLevels[] = {RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX};
+const char* const hashTable[27] PROGMEM = {
+  morse_A, morse_B, morse_C, morse_D, morse_E, morse_F, morse_G,
+  morse_H, morse_I, morse_J, morse_K, morse_L, morse_M, morse_N,
+  morse_O, morse_P, morse_Q, morse_R, morse_S, morse_T, morse_U,
+  morse_V, morse_W, morse_X, morse_Y, morse_Z, morse_SP
+};
 
+// Queue for the queue of packets for Tx
 PacketNode *tx_queue_front = NULL;
 PacketNode *tx_queue_back = NULL;
 
@@ -20,40 +48,8 @@ MsgNode *msg_tail = NULL;
 
 StackNode *rx_stack = NULL;
 
-//hash table initialization, normal morse code + Space is ----
-const char* hashTable[27] ={
-  ".-",   //A
-  "-...", //B
-  "-.-.", //C
-  "-..",  //D
-  ".",    //E
-  "..-.", //F
-  "--.",  //G
-  "....", //H
-  "..",   //I
-  ".---", //J
-  "-.-",  //K
-  ".-..",  //L
-  "--",   //M
-  "-.",   //N
-  "---",  //O
-  ".--.", //P
-  "--.-", //Q
-  ".-.",  //R
-  "...",  //S
-  "-",    //T
-  "..-",  //U
-  "...-", //V
-  ".--",  //W
-  "-..-", //X
-  "-.--", //Y
-  "--..", //Z
-  "----"  //Space
-};
-
-// This function will have to change alot for the morse encoding
-int construct_packets(
-    Node *head_ptr) { // creates packets consisting of 30 bytes of char data
+// TX
+int construct_packets(Node *head_ptr) { // creates packets consisting of 30 bytes of char data
   queue_clear(&tx_queue_front, &tx_queue_back);
   Node *temp = head_ptr;
   int index = 0;
@@ -74,16 +70,12 @@ int construct_packets(
   return index;
 }
 
-// TX
-void transmit_packet() { // transmits packets of chars
+void transmit_packet() {
   packet chunk = dequeue(&tx_queue_front, &tx_queue_back);
-  bool ok = false;
-  for (int attempt = 0; attempt < 3 && !ok; attempt++) {
-    ok = radio.write(&chunk, sizeof(chunk));
-  }
+  hc12.write((uint8_t *)&chunk, sizeof(chunk));
   Serial.print(F("[TX] pkt "));
-  Serial.print(chunk.packet_index);
-  Serial.println(ok ? F(": ACK") : F(": no ACK"));
+  Serial.println(chunk.packet_index);
+  delay(150); // give receiver time to process before next packet
 }
 
 void transmit_message(Node *head, LiquidCrystal_I2C &lcd) {
@@ -99,46 +91,56 @@ void transmit_message(Node *head, LiquidCrystal_I2C &lcd) {
 }
 
 // RX
+// RX buffers bytes until a full packet arrives, then validates with finalPacket then pushes
 int receive_packet() {
-  packet chunk;
-  radio.read(&chunk, sizeof(chunk));
+  static uint8_t radio_rx_buffer[sizeof(packet)];
+  // The rx buffer array is an array of bytes
+  static int pos = 0;
+  // static is used here so that if not all the bytes are here on the next loop iteration
+  // when they ARE here, the function continues from where is was.
 
-  // Count how many packets are already on the stack — the next valid packet_index must equal this
-  int depth = 0;
-  for (StackNode *p = rx_stack; p != NULL; p = p->next) depth++;
+  while (hc12.available()) {
+    radio_rx_buffer[pos++] = (uint8_t)hc12.read();
 
-  if (chunk.data[0] == '\0' || chunk.packet_index != depth) {
-    Serial.print(F("[RX] bad pkt idx="));
-    Serial.print(chunk.packet_index);
-    Serial.print(F(" depth="));
-    Serial.print(depth);
-    Serial.print(F(" data[0]="));
-    Serial.println((int)chunk.data[0]);
-    stack_clear(&rx_stack);
-    return -1;
+    if (pos == sizeof(packet)) {
+      pos = 0;
+      packet chunk;
+      memcpy(&chunk, radio_rx_buffer, sizeof(chunk));
+
+      if (chunk.finalPacket != CONTINUE && chunk.finalPacket != EOM) { \
+        // If the final byte isnt one of the correct end bytes then something went wrong - so empty out the stack and display and error
+        stack_clear(&rx_stack);
+        return -1;
+      }
+      push(&rx_stack, chunk);
+      return chunk.packet_index;
+    }
   }
-  push(&rx_stack, chunk);
-  return chunk.packet_index;
+  return -2; // if less than 32 chars have been received exit and go next
+             // this value isnt used anywhere it is just to return something that is negative and not -1
 }
 
 // Rebuilds the message back to front from the stack
 // uses a stack because its much easier to see the last packet
 char *rebuild_message() {
-  if (stack_empty(rx_stack))
-    return NULL;
-
   packet chunk = pop(&rx_stack);
   int packetNum = chunk.packet_index;
   int finalChunkSize = strnlen(chunk.data, PACKET_SIZE);
-
+  //We have the final packet number, so see how much data is in the final packet
+  //and malloc a string of all preceeding full packets pull however full the final one is
   int totalChars = (packetNum * PACKET_SIZE) + finalChunkSize + 1;
   char *message = (char *)malloc(totalChars);
+
+  //why would this message ever be null - is this useless?
   if (message == NULL) {
     stack_clear(&rx_stack);
     return NULL;
   }
+
+  //null terminate the malloced string
   message[totalChars - 1] = '\0';
 
+  // add a comment here
   int arrPos = chunk.packet_index * PACKET_SIZE;
   for (int j = 0; j < finalChunkSize; j++) {
     message[arrPos + j] = chunk.data[j];
@@ -157,50 +159,107 @@ char *rebuild_message() {
   return message;
 }
 
-// Radio Init bruv
-void init_radio_tx(int byte_address, int pwr_lvl) {
+// Reset state and clear the UART buffer
+void init_radio() {
   stack_clear(&rx_stack);
-  radio.openWritingPipe(address[byte_address - 1]);
-  radio.setPALevel(pwrLevels[pwr_lvl]);
-  radio.stopListening();
+  while (hc12.available()) hc12.read(); // clear junk data
 }
 
-void init_radio_rx(int byte_address, int pwr_lvl) {
-  stack_clear(&rx_stack);                          // discard any stale packets from prior session
-  radio.openReadingPipe(1, address[byte_address - 1]);
-  radio.setPALevel(pwrLevels[pwr_lvl]);
-  radio.flush_rx();                                // flush FIFO before starting to listen
-  radio.startListening();
-}
-
-// Stack implementation functions
-void push(StackNode **top, packet p) {
-  StackNode *p_new = (StackNode *)malloc(sizeof(StackNode));
-  if (p_new == NULL) {
-    memory_full(lcd);
-    return;
+// inbox functions
+int saved_msgs() {
+  int count = 0;
+  MsgNode *p = msg_head;
+  while (p != NULL) {
+    count++;
+    p = p->next;
   }
-  p_new->data = p;
-  p_new->next = *top;
-  *top = p_new;
+  return count;
 }
 
-packet pop(StackNode **top) {
-  packet p = {};
-  if (*top == NULL)
-    return p;
-  StackNode *temp = *top;
-  p = temp->data;
-  *top = temp->next;
-  free(temp);
+MsgNode* get_msg_at(int index) {
+  MsgNode *p = msg_head;
+  for (int i = 0; i < index && p != NULL; i++)
+    p = p->next;
   return p;
 }
 
-bool stack_empty(StackNode *top) { return top == NULL; }
+// Linked list functions
+MsgNode *create_msg_node(char *val) {
+  MsgNode *p_new = (MsgNode *)malloc(sizeof(MsgNode));
+  if (p_new == NULL)
+    return NULL;
+  p_new->data = val;
+  p_new->prev = NULL;
+  p_new->next = NULL;
+  return p_new;
+}
 
-void stack_clear(StackNode **top) {
-  while (*top)
-    pop(top);
+int insert_msg_head(char *val) {
+  MsgNode *p_new = create_msg_node(val);
+  if (p_new == NULL)
+    return -1;
+  if (msg_head != NULL) {
+    p_new->next = msg_head;
+    msg_head->prev = p_new;
+    msg_head = p_new;
+  } else {
+    msg_head = p_new;
+    msg_tail = p_new;
+  }
+  return 0;
+}
+
+int insert_msg_middle(MsgNode *target, char *val) {
+  if (target == NULL)
+    return insert_msg_head(val);
+  MsgNode *p_new = create_msg_node(val);
+  if (p_new == NULL)
+    return -1;
+  p_new->prev = target;
+  p_new->next = target->next;
+  if (target->next != NULL) {
+    target->next->prev = p_new;
+  } else {
+    msg_tail = p_new;
+  }
+  target->next = p_new;
+  return 0;
+}
+
+int insert_msg_tail(char *val) {
+  MsgNode *p_new = create_msg_node(val);
+  if (p_new == NULL)
+    return -1;
+  if (msg_tail != NULL) {
+    msg_tail->next = p_new;
+    p_new->prev = msg_tail;
+    msg_tail = p_new;
+  } else {
+    msg_head = p_new;
+    msg_tail = p_new;
+  }
+  return 0;
+}
+
+int delete_msg(MsgNode *target) {
+  if (target == NULL)
+    return -1;
+  if (target == msg_head && target == msg_tail) {
+    msg_head = NULL;
+    msg_tail = NULL;
+  } else if (target == msg_head) {
+    msg_head = target->next;
+    msg_head->prev = NULL;
+  } else if (target == msg_tail) {
+    msg_tail = target->prev;
+    msg_tail->next = NULL;
+  } else {
+    target->prev->next = target->next;
+    target->next->prev = target->prev;
+  }
+  free(target->data);
+  free(target);
+  return 0;
 }
 
 // Queue implementation functions
@@ -251,113 +310,47 @@ void queue_clear(PacketNode **front, PacketNode **back) {
     dequeue(front, back);
 }
 
-// Linked list functions
-MsgNode *create_msg_node(char *val) {
-  MsgNode *p_new = (MsgNode *)malloc(sizeof(MsgNode));
-  if (p_new == NULL)
-    return NULL;
-  p_new->data = val;
-  p_new->prev = NULL;
-  p_new->next = NULL;
-  return p_new;
-}
-
-int insert_msg_head(char *val) {
-  MsgNode *p_new = create_msg_node(val);
-  if (p_new == NULL)
-    return -1;
-  if (msg_head != NULL) {
-    p_new->next = msg_head;
-    msg_head->prev = p_new;
-    msg_head = p_new;
-  } else {
-    msg_head = p_new;
-    msg_tail = p_new;
+// Stack implementation functions
+void push(StackNode **top, packet p) {
+  StackNode *p_new = (StackNode *)malloc(sizeof(StackNode));
+  if (p_new == NULL) {
+    memory_full(lcd);
+    return;
   }
-  return 0;
+  p_new->data = p;
+  p_new->next = *top;
+  *top = p_new;
 }
 
-int insert_msg_middle(MsgNode *target, char *val) {
-  if (target == NULL)
-    return insert_msg_head(val);
-  MsgNode *p_new = create_msg_node(val);
-  if (p_new == NULL)
-    return -1;
-
-  p_new->prev = target;
-  p_new->next = target->next;
-
-  if (target->next != NULL) {
-    target->next->prev = p_new;
-  } else {
-    msg_tail = p_new;
-  }
-  target->next = p_new;
-  return 0;
+packet pop(StackNode **top) {
+  packet p = {};
+  if (*top == NULL)
+    return p;
+  StackNode *temp = *top;
+  p = temp->data;
+  *top = temp->next;
+  free(temp);
+  return p;
 }
 
-int insert_msg_tail(char *val) {
-  MsgNode *p_new = create_msg_node(val);
-  if (p_new == NULL)
-    return -1;
-  if (msg_tail != NULL) {
-    msg_tail->next = p_new;
-    p_new->prev = msg_tail;
-    msg_tail = p_new;
-  } else {
-    msg_head = p_new;
-    msg_tail = p_new;
-  }
-  return 0;
+bool stack_empty(StackNode *top) { return top == NULL; }
+
+void stack_clear(StackNode **top) {
+  while (*top)
+    pop(top);
 }
 
-int delete_msg(MsgNode *target) {
-  if (target == NULL)
-    return -1;
-  if (target == msg_head && target == msg_tail) {
-    msg_head = NULL;
-    msg_tail = NULL;
-  } else if (target == msg_head) {
-    msg_head = target->next;
-    msg_head->prev = NULL;
-  } else if (target == msg_tail) {
-    msg_tail = target->prev;
-    msg_tail->next = NULL;
-  } else {
-    target->prev->next = target->next;
-    target->next->prev = target->prev;
-  }
-  free(target->data);
-  free(target);
-  return 0;
-}
-
-int saved_msgs() {
-  int count = 0;
-  MsgNode *p = msg_head;
-  while (p != NULL) {
-    count++;
-    p = p->next;
-  }
-  return count;
-}
-
+// Hash table functions
 int hash(char letter){
     //since we are only dealing with letters from a-z and a space,
     //this hash function will directly translate the characters ASCII
     //to the hash.
 
     // 0 - 25 will be letters, 26 is space
-
-    if ('A' <= letter && letter <= 'Z'){
-        return letter - 65;
-    } else if ('a' <= letter && letter <= 'z'){
-        return letter - 97;
-    } else if (letter == ' '){
-        return 26;
-    } else {
-        return -1;
-    }
+    if ('A' <= letter && letter <= 'Z') return letter - 'A';
+    else if ('a' <= letter && letter <= 'z') return letter - 'a';
+    else if (letter == ' ') return 26;
+    else return -1;
 }
 
 Node* translate_message(Node* head_ptr){
@@ -369,7 +362,10 @@ Node* translate_message(Node* head_ptr){
     int hash_val = hash(temp->data);  //not using % because hash function always return proper numbers
 
     if(hash_val != -1) {    // Only translate if it's a valid letter or space
-      const char* encoded_letter = hashTable[hash_val];
+      // Create an array, copy morse string from progmem to the array
+      // The function strcpy_P was claudes idea, anything to save memory
+      char encoded_letter[6];
+      strcpy_P(encoded_letter, (const char*)pgm_read_ptr(&hashTable[hash_val]));
       int i = 0;
 
       //Append code
@@ -443,12 +439,12 @@ morseTreeNode *insertNode(morseTreeNode *root, const char *key, char letter, int
     }
     root->key[strlen(key)] = '\0';
     return root;
-  } 
+  }
   else {
   if (key[depth] == DASH) { // next thing is a dash so go right
     depth++;
     root->right = insertNode(root->right, key, letter, depth);
-  } 
+  }
   else { // otherwise we want to go left
     depth++;
     root->left = insertNode(root->left, key, letter, depth);
@@ -458,7 +454,6 @@ morseTreeNode *insertNode(morseTreeNode *root, const char *key, char letter, int
 }
 
 morseTreeNode *buildTree(morseTreeNode *root) {
-
   root = insertNode(root, ".-", 'A', 0);
   root = insertNode(root, "-...", 'B', 0);
   root = insertNode(root, "-.-.", 'C', 0);
@@ -512,8 +507,7 @@ char *getMorse(char *message) {
 
 // if letter cannot be found, return ? as the letter.
 char findLetter(char *searchKey, morseTreeNode *root, int searchDepth) {
-  if (root == NULL)
-    return '?';
+  if (root == NULL) return '?';
   if (searchDepth == (int)strlen(searchKey)) {
     return ((strcmp(searchKey, root->key) == 0) ? (root->letter) : '?');
   }
@@ -559,4 +553,3 @@ char *decodeMessage(char *message, int letterCount, morseTreeNode *root) {
   }
   return message;
 }
-

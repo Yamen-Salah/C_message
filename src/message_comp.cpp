@@ -1,9 +1,9 @@
 #include "message_comp.h"
 #include <LiquidCrystal_I2C.h>
 
-const char letters[] = {'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'};
+const char letters[] = {' ','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'};
 const char numbers[] = {'0','1','2','3','4','5','6','7','8','9'};
-const char specials[] = {' ','.','?','!',';','"','#','@','$','+','-','*','/','(',')'};
+const char specials[] = {'.','?','!',';','"','#','@','$','+','-','*','/','(',')'};
 
 const CharSet charSets[] = {
   {letters, sizeof(letters)/sizeof(letters[0])},
@@ -15,20 +15,21 @@ Node *p_head = NULL;
 Node *p_tail = NULL;
 
 //LINKED LIST FUNCTIONS AFTER HERE
-// Function to create a new node
+
+// allocates a new node with the given character
 Node* create_node (char val) {
   // Declaration of local node pointer, with mem allocation
   Node *p_new = (Node *) malloc (sizeof (Node));
-  
+
   if (p_new != NULL) {
     p_new->data = val;
-    p_new->prev = NULL; 
+    p_new->prev = NULL;
     p_new->next = NULL;
   }
   return p_new;
 }
 
-// Function to insert node at front of the list
+// inserts a character at the front of the list
 int insert_data_at_head (char val){
   Node *p_new = create_node (val);
   // Make sure node creation worked
@@ -44,29 +45,26 @@ int insert_data_at_head (char val){
     p_head = p_new;
     p_tail = p_new;
   }
-  return 0;   
+  return 0;
 }
- 
-// Insert new item of data at back of linked list
-int insert_data_at_tail (char val) {
-  Node *p_new = create_node (val);
-  // Make sure node creation worked
-  if (p_new == NULL) {
+
+// inserts a character at the back of the list
+int insert_data_at_tail(char val) {
+  Node *p_new = create_node(val);
+  if (p_new == NULL)
     return -1;
-  }
-  if (p_tail != NULL){
+  if (p_tail != NULL) {
     p_tail->next = p_new;
     p_new->prev = p_tail;
     p_tail = p_new;
-  }
-  else {
+  } else {
     p_head = p_new;
     p_tail = p_new;
   }
   return 0;
 }
 
-//Insert data based on a given pointer rather than a value again because we want to perform this operation relative to a cursor.
+// inserts a character after the target node
 int insert_data_at_middle(Node *target, char val) {
   if (target == NULL) {
     return insert_data_at_head(val);
@@ -86,8 +84,7 @@ int insert_data_at_middle(Node *target, char val) {
   return 0;
 }
 
-//Find a given node by pointer rather than value like the lab version of this function.
-//This is because we want the cursor to be able to delete values that are right before or after its pos not to search for a given value.
+// removes and frees the target node
 int find_and_delete_data(Node *target) {
   if (target == NULL) return -1;
 
@@ -109,18 +106,19 @@ int find_and_delete_data(Node *target) {
   return 0;
 }
 
+// frees all nodes starting from head
+void free_node_list(Node *head) {
+  while (head != NULL) { Node *next = head->next; free(head); head = next; }
+}
+
+// frees and clears the entire compose buffer
 void delete_all_data() {
-  Node *p_temp;
-  // Loop through all nodes
-  while (p_head != NULL) {
-    p_temp = p_head;
-    p_head = p_head->next;
-    free(p_temp);
-  }
+  free_node_list(p_head);
+  p_head = NULL;
   p_tail = NULL;
 }
 
-//returns the length of the message by following the chain of nodes.
+// returns the number of characters in the compose buffer
 int get_message_length() {
   int messageLen = 0;
   Node *p = p_head;
@@ -128,8 +126,7 @@ int get_message_length() {
   return messageLen;
 }
 
-//Get node at returns a pointer to the node that is at the index the pot is selecting. This way, you can easily delete stuff or add to a given 
-//index within the LL
+// returns the node at the given index
 Node* get_node_at(int index) {
   Node *p = p_head;
   for (int i = 0; i < index && p != NULL; i++) {

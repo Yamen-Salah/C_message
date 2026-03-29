@@ -1,25 +1,26 @@
-#include <PinChangeInterrupt.h>
+#include <SoftwareSerial.h>
 #include "message_comp.h"
 #include "ui.h"
 #include "transmit.h"
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-RF24 radio(A2, A1);  // CE=A2, CSN=A1; SCK/MISO/MOSI are hardware SPI (13/12/11)
+// HC-12 Pinout: RX=12, TX=11, SET=13
+SoftwareSerial hc12(HC12_RX_PIN, HC12_TX_PIN);
 
 const int encoder_B = 8;
-const int encoder_A = 7;
+const int encoder_A = 2;
 const int selectBtn = 6;
 const int leftArrow = 5;
 const int upArrow   = 4;
 const int rightArrow = 3;
-const int downArrow  = 2;
+const int downArrow  = 7;
 
-morseTreeNode* root = NULL;
-int currentSet = 0;
 enum Mode { RX, TX };
+morseTreeNode* root = NULL;
 Mode current_mode = TX;
 bool rxListen = true;
 int rxMsgIndex = 0;
+int currentSet = 0;
 
 unsigned long lastLeft = 0;
 unsigned long lastRight = 0;
@@ -31,17 +32,12 @@ void encoder_interrupt() {
 }
 
 void setup() {
-  Serial.begin(9600);
-  bool radioOk = false;
-  for (int attempt = 0; attempt < 5; attempt++) {
-    delay(200);
-    if (radio.begin()) { radioOk = true; break; }
-  }
-  Serial.println(radioOk ? F("[SETUP] radio OK") : F("[SETUP] radio FAILED"));
+  pinMode(HC12_SET_PIN, OUTPUT);
+  digitalWrite(HC12_SET_PIN, HIGH); // HIGH = normal mode
+  hc12.begin(9600);
 
   lcd.init();
   lcd.backlight();
-  init_radio_tx(1, 3);
 
   root = initNode((char*)ROOTKEY, ROOTLETTER);
   root = buildTree(root);
@@ -53,39 +49,38 @@ void setup() {
   pinMode(downArrow, INPUT_PULLUP);
   pinMode(leftArrow, INPUT_PULLUP);
   pinMode(rightArrow, INPUT_PULLUP);
-  attachPCINT(digitalPinToPCINT(encoder_A), encoder_interrupt, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoder_A), encoder_interrupt, CHANGE);
 }
 
 void loop() {
   if (current_mode == RX) {
-
     if (rxListen) {
-      if (radio.available()) {
+      if (hc12.available()) {
         int pktIndex = receive_packet();
-        if (pktIndex == -1) { return; }
-        if (pktIndex > 0) rx_count(pktIndex, lcd);
+        if (pktIndex == -1) {
+          rx_failure(lcd);
+          return;
+        }
+        if (pktIndex >= 0) rx_pkt_count(pktIndex, lcd);
 
-        if (rx_stack != NULL && rx_stack->data.finalPacket == EOM) {
+        if (pktIndex >= 0 && rx_stack != NULL && rx_stack->data.finalPacket == EOM) { // The full message has been received
           char* message = rebuild_message();
+
           if (message != NULL) {
             message = decodeMessage(message, 0, root);
             if (message == NULL) { decode_failure(lcd); return; }
             insert_msg_head(message);
             rxMsgIndex = 0;
-            Serial.print(F("[RX] received: \""));
-            Serial.print(message);
-            Serial.println(F("\""));
-            ui_msg_received(saved_msgs(), lcd);
-          } else {
-            lcd.setCursor(0, 0);
-            lcd.print(F("Rebuild Failed  "));
-            delay(500);
+            pending_msgs(saved_msgs(), lcd);
+          } 
+          else {
+            rebuild_failure(lcd);
           }
         }
       }
     }
 
-    int selectAction = handleSelect(selectBtn, lcd);
+    SelectAction selectAction = handleSelect(selectBtn, lcd);
 
     if (selectAction == LONG_SELECT) {
       currentSet = 0;
@@ -93,19 +88,14 @@ void loop() {
       editMode = false;
       current_mode = TX;
       delete_all_data();
-      init_radio_tx(1, 3);
-      Serial.println(F("[MODE] TX"));
+      init_radio();
       return;
     }
 
     int msgCount = saved_msgs();
 
     if (selectAction == SHORT_SELECT && !rxListen && msgCount > 0) {
-      MsgNode *current = msg_head;
-      for (int i = 0; i < rxMsgIndex && current; i++) {
-        current = current->next;
-      }
-      delete_msg(current);
+      delete_msg(get_msg_at(rxMsgIndex));
       msgCount = saved_msgs();
       rxMsgIndex = msgCount ? min(rxMsgIndex, msgCount - 1) : 0;
     }
@@ -116,7 +106,7 @@ void loop() {
     }
     if (buttonPressed(leftArrow, lastLeft) && !rxListen) {
       rxListen = true;
-      ui_listen(lcd);
+      rx_listen(lcd);
     }
 
     if (!rxListen) {
@@ -129,43 +119,53 @@ void loop() {
           rxMsgIndex++;
           encoderPos = 0;
         }
-
-        MsgNode *currentMsg = msg_head;
-        for (int i = 0; i < rxMsgIndex && currentMsg != NULL; i++) {
-          currentMsg = currentMsg->next;
-        }
-
+        MsgNode *currentMsg = get_msg_at(rxMsgIndex);
         if (currentMsg != NULL) {
           int maxScroll = max(0, (int)strlen(currentMsg->data) - 16);
           encoderPos = constrain(encoderPos, 0, maxScroll);
           rx_display_message(currentMsg->data, encoderPos, rxMsgIndex, lcd);
         }
-      } else {
-        ui_no_messages(lcd);
+      } 
+      else {
+        no_messages(lcd);
       }
     }
-
-  } else {
-
-    int selectAction = handleSelect(selectBtn, lcd);
+  } 
+  else {
+    SelectAction selectAction = handleSelect(selectBtn, lcd);
 
     if (selectAction == LONG_SELECT) {
-      Serial.print(F("[TX] sending: \""));
-      for (Node* p = p_head; p != NULL; p = p->next) Serial.print(p->data);
-      Serial.println(F("\""));
       Node* morse_head = translate_message(p_head);
       transmit_message(morse_head, lcd);
-      Node* temp = morse_head;
-      while (temp != NULL) { Node* next = temp->next; free(temp); temp = next; }
+      free_node_list(morse_head);
 
       delete_all_data();
-      init_radio_rx(1, 3);
+      init_radio();
       editMode = false;
       current_mode = RX;
       rxListen = true;
-      ui_listen(lcd);
-      Serial.println(F("[MODE] RX"));
+      rx_listen(lcd);
       return;
+    }
+
+    if (selectAction == SHORT_SELECT) {
+      if (!editMode) {
+        const auto &cs = charSets[currentSet];
+        if (cs.size > 0) {
+          char c = cs.chars[constrain(encoderPos, 0, cs.size - 1)];
+          Node *target = insertPos > 0 ? get_node_at(insertPos - 1) : nullptr;
+          if ((target ? insert_data_at_middle(target, c) : insert_data_at_head(c)) == 0)
+            insertPos++;
+        }
+      } else {
+        Node *node = get_node_at(updateCursor);
+        if (node) {
+          find_and_delete_data(node);
+          int len = get_message_length();
+          if (len == 0) { updateCursor = 0; insertPos = 0; }
+          else updateCursor = min(updateCursor, len - 1);
+        }
+      }
     }
 
     if (!editMode) {
@@ -180,9 +180,9 @@ void loop() {
     }
 
     if (buttonPressed(downArrow, lastDown) && !editMode) {
-      int len = get_message_length();
+      int messsageLen = get_message_length();
       editMode = true;
-      updateCursor = constrain(insertPos - 1, 0, len - 1);
+      updateCursor = constrain(insertPos - 1, 0, messsageLen - 1);
       encoderPos = updateCursor;
     }
 
@@ -199,7 +199,8 @@ void loop() {
         updateCursor = encoderPos;
       }
       tx_display_message(updateCursor, true, lcd);
-    } else {
+    } 
+    else {
       encoderPos = constrain(encoderPos, 0, charSets[currentSet].size - 1);
       letter_scroll(encoderPos, lcd);
       tx_display_message(insertPos, false, lcd);

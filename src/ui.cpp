@@ -2,8 +2,7 @@
 #include "message_comp.h"
 #include <LiquidCrystal_I2C.h>
 
-//Debounce times
-const int DEBOUNCE_MS   = 200;
+const int DEBOUNCE_MS = 150;
 const int LONG_PRESS_MS = 600;
 
 unsigned long lastSelect = 0;
@@ -17,13 +16,16 @@ bool editMode = false;
 int  insertPos = 0;
 int  updateCursor = 0;
 
-//Hardware interfacing functions
+// Input functions start here
+
+// returns true if pin is LOW and debounce has elapsed
 bool buttonPressed(int pin, unsigned long &lastPress) {
   if (digitalRead(pin) || millis() - lastPress <= DEBOUNCE_MS) return false;
   lastPress = millis();
   return true;
 }
 
+// updates encoderPos on each encoder tick
 void readEncoder(int pinA, int pinB) {
   int aState = digitalRead(pinA);
   if(aState != lastTick && aState == LOW){
@@ -32,52 +34,38 @@ void readEncoder(int pinA, int pinB) {
   lastTick = aState;
 }
 
-int handleSelect(int pin, LiquidCrystal_I2C &lcd) {
+// returns press type for the select button
+SelectAction handleSelect(int pin, LiquidCrystal_I2C &lcd) {
   bool pressed = (digitalRead(pin) == LOW);
-  int state = SELECT_NONE;
+  SelectAction state = SELECT_NONE;
 
-  //Press starts recording the time
+  // Press starts recording the time
   if (pressed && !selectHeld) {
     selectHeld = true;
     longPressFired = false;
     lastSelect = millis();
   }
 
-  //Held
+  // Held so its a long press
   else if (pressed && !longPressFired && millis() - lastSelect > LONG_PRESS_MS) {
     longPressFired = true;
     state = LONG_SELECT;
   }
 
-  //Released
+  // Released so its a short press
   else if (!pressed && selectHeld) {
     if (!longPressFired && millis() - lastSelect > DEBOUNCE_MS) {
-      if (!editMode) {
-        const auto &cs = charSets[currentSet];
-        if (cs.size > 0) {
-          char c = cs.chars[constrain(encoderPos, 0, cs.size - 1)];
-          Node *target = insertPos > 0 ? get_node_at(insertPos - 1) : nullptr;
-          if ((target ? insert_data_at_middle(target, c) : insert_data_at_head(c)) == 0)
-            insertPos++;
-        }
-      } else {
-        Node *node = get_node_at(updateCursor);
-        if (node) {
-          find_and_delete_data(node);
-          int len = get_message_length();
-          if (len == 0) { updateCursor = 0; insertPos = 0; }
-          else updateCursor = min(updateCursor, len - 1);
-        }
-      }
       state = SHORT_SELECT;
     }
     selectHeld = false;
     longPressFired = false;
   }
-
   return state;
 }
 
+// Updating display functions start here
+
+// shows character picker
 void letter_scroll(int letter_index, LiquidCrystal_I2C &lcd) {
   int setSize = charSets[currentSet].size;
   if (setSize == 0) return;
@@ -106,8 +94,7 @@ void letter_scroll(int letter_index, LiquidCrystal_I2C &lcd) {
   }
 }
 
-//2 DISPLAY FUNCTIONS... ONE FOR THE MESSAGE COMPOSE WRITING ONE FOR SCROLLING AND EDITING THE MESSAGE
-//possible to combine ltr
+// renders message and cursor in compose mode
 void tx_display_message(int cursorPos, bool editMode, LiquidCrystal_I2C &lcd) {
   int messageLength = get_message_length();
 
@@ -129,14 +116,14 @@ void tx_display_message(int cursorPos, bool editMode, LiquidCrystal_I2C &lcd) {
   }
 }
 
+// shows messages in inbox
 void rx_display_message(char *msg, int cursorPos, int msgIndex, LiquidCrystal_I2C &lcd){
-  // Row 0: Message Nunmber
+
   lcd.setCursor(0, 0);
   lcd.print(F("Msg "));
   lcd.print(msgIndex + 1);
   lcd.print(F("           "));
 
-  // Row 1: message 
   int len = strlen(msg);
   lcd.setCursor(0, 1);
   int col = 0;
@@ -145,6 +132,7 @@ void rx_display_message(char *msg, int cursorPos, int msgIndex, LiquidCrystal_I2
   while (col < 16) { lcd.print(' '); col++; }
 }
 
+// shows packet send progress with a bar
 void progress_bar(int packet_index, int totalPackets, LiquidCrystal_I2C &lcd){
   lcd.setCursor(0, 0);
   lcd.print(F("Sending "));
@@ -152,21 +140,21 @@ void progress_bar(int packet_index, int totalPackets, LiquidCrystal_I2C &lcd){
   lcd.print("/");
   lcd.print(totalPackets);
 
-  int percent = ((packet_index + 1) * 100) / totalPackets;
-  int barLength = (packet_index + 1) * 13 / totalPackets;
+  int percent   = (packet_index + 1) * 100 / totalPackets;
+  int barLength = (packet_index + 1) * 13  / totalPackets;
 
   lcd.setCursor(0, 1);
-  for (int i = 0; i < 13; i++) {
-    if(i < barLength) lcd.write(0xFF);
-    else lcd.print(' ');
-  }
+  for (int i = 0; i < 13; i++)
+    lcd.write(i < barLength ? 0xFF : ' ');
+
   lcd.setCursor(13, 1);
-  if (percent < 10) lcd.print("  ");
-  else if (percent < 100) lcd.print(" ");
+  if (percent < 100) lcd.print(' ');
+  if (percent < 10)  lcd.print(' ');
   lcd.print(percent);
 }
 
-void rx_count(int packet_index, LiquidCrystal_I2C &lcd){
+// shows incoming packet count during receive
+void rx_pkt_count(int packet_index, LiquidCrystal_I2C &lcd){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(F(" Receiving Msg! "));
@@ -177,24 +165,17 @@ void rx_count(int packet_index, LiquidCrystal_I2C &lcd){
   lcd.print(F("?"));
 }
 
-void memory_full(LiquidCrystal_I2C &lcd){
-  lcd.setCursor(0, 0);
-  lcd.print(F("  No Memory :(  "));
-}
+// Status screen functions start here
 
-//The mythical yamen function
-void decode_failure(LiquidCrystal_I2C &lcd){ 
-  lcd.setCursor(0, 0);
-  lcd.print(F("Decoding Faliure"));
-}
-
-void ui_listen(LiquidCrystal_I2C &lcd){
+// shows idle listening screen
+void rx_listen(LiquidCrystal_I2C &lcd){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(F("  Listening...  "));
 }
 
-void ui_msg_received(int msgCount, LiquidCrystal_I2C &lcd){
+// shows listening screen with unread message count
+void pending_msgs(int msgCount, LiquidCrystal_I2C &lcd){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(F("  Listening...  "));
@@ -203,17 +184,37 @@ void ui_msg_received(int msgCount, LiquidCrystal_I2C &lcd){
   lcd.print(F(" msg(s) waiting "));
 }
 
-void ui_no_messages(LiquidCrystal_I2C &lcd){
+// shows empty inbox screen
+void no_messages(LiquidCrystal_I2C &lcd){
   lcd.setCursor(0, 0);
   lcd.print(F("   No Messages  "));
   lcd.setCursor(0, 1);
   lcd.print(F("                "));
 }
 
-//gpts function for seeing how much ram is left
-int free_ram() {
-  extern int __heap_start, *__brkval;
-  int v;
-  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+// shows out of memory warning
+void memory_full(LiquidCrystal_I2C &lcd){
+  lcd.setCursor(0, 0);
+  lcd.print(F("  No Memory :(  "));
 }
 
+// Error screen fucntions start here
+
+//The mythical yamen function
+void decode_failure(LiquidCrystal_I2C &lcd){
+  lcd.setCursor(0, 0);
+  lcd.print(F("Decoding Faliure"));
+}
+
+// shows receive error
+void rx_failure(LiquidCrystal_I2C &lcd){
+  lcd.setCursor(0, 0);
+  lcd.print(F("   Rx Faliure   "));
+}
+
+// shows message rebuild error
+void rebuild_failure(LiquidCrystal_I2C &lcd){
+  lcd.setCursor(0, 0);
+  lcd.print(F("Rebuild Failed  "));
+  delay(500);
+}
